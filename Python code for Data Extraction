@@ -1,0 +1,81 @@
+import snowflake.snowpark as snowpark
+from snowflake.snowpark.functions import col,lit, max as max_
+from snowflake.snowpark.types import DoubleType
+
+def main(session: snowpark.Session):
+    """
+    Standard Snowflake Python Worksheet Handler.
+    The 'session' object is automatically connected to ECON_AGENT_DB.ANALYTICS.
+    """
+   
+    # 1. Print statement (Visible in the 'Output' tab below)
+    print("Handshake successful. Connected to Snowflake.")
+
+    # 2. Logic: Create a DataFrame to return
+    # Here we select metadata to prove the connection is live
+    df = session.sql("""
+        SELECT
+            CURRENT_ACCOUNT() AS Account,
+            CURRENT_ROLE() AS Role,
+            CURRENT_WAREHOUSE() AS Warehouse,
+            'Connection Success' AS Status
+    """)
+
+    # 3. CRITICAL: Return the DataFrame to the UI
+    # This satisfies the 'Return Type: Table' setting
+    econ_df = session.table("PUBLIC_DATA_FREE.FINANCIAL_ECONOMIC_INDICATORS_TIMESERIES")
+    housing_df = session.table("PUBLIC_DATA_FREE.FREDDIE_MAC_HOUSING_TIMESERIES")
+   
+    cpi = (
+        econ_df.filter(col("GEO_ID") == "country/USA")
+        .filter(
+            col("VARIABLE_NAME") == "CPI: All items, Monthly, 1982-84 Index Date (Seasonally adjusted)"
+        )
+        .select(
+            col("DATE"),
+            col("VALUE").cast(DoubleType()).alias("VALUE"),
+            lit("CPI").alias("METRIC")
+        )
+    )
+
+    unemployment = (
+        econ_df.filter(col("GEO_ID") == "country/USA")
+        .filter(
+            col("VARIABLE_NAME") == "Current Labor Force: Unemployment Rate - 20 yrs. & over, Monthly (Seasonally adjusted)"
+        )
+        .select(
+            col("DATE"),
+            col("VALUE").cast(DoubleType()).alias("VALUE"),
+            lit("UNEMPLOYMENT_RATE").alias("METRIC")
+        )
+    )
+    mortgage = (
+        housing_df.filter(col("VARIABLE_NAME") == "30-Year Fixed Rate Mortgage Rate, National Average")
+        .select(
+            col("DATE"),
+            col("VALUE").cast(DoubleType()).alias("VALUE"),
+            lit("MORTGAGE_RATE_30Y").alias("METRIC")
+        )
+    )
+
+    combined = cpi.union_all(unemployment).union_all(mortgage)
+
+    # 3. Print count to the 'Output' console
+    print(f"CPI rows: {cpi.count()}")
+    print(f"Unemployment rows: {unemployment.count()}")
+    print(f"Mortgage rows: {mortgage.count()}")
+    print("\nCombined data sample:")
+    combined.show(15)
+   
+    dashboard = (
+        combined.pivot("METRIC", ["CPI", "UNEMPLOYMENT_RATE", "MORTGAGE_RATE_30Y"])
+    .agg(max_(col("VALUE")))
+        .sort(col("DATE").desc())
+    )
+
+    print(f"Combined data rows: {combined.count()}")
+    print("Dashboard sample (Wide Format):")
+    dashboard.show(10)
+
+    # 8. Return the pivoted dashboard to the Results Tab
+    return dashboard
