@@ -1,0 +1,106 @@
+import streamlit as st
+
+from snowflake.snowpark.context import get_active_session
+
+from snowflake.cortex import Complete
+
+
+session = get_active_session()
+
+
+
+st.title("📊 Ask the US Economy")
+
+st.caption("Powered by Snowflake Cortex & Dynamic Tables • Data: BLS & Freddie Mac")
+
+
+
+# Pull latest data from our auto-refreshing Dynamic Table
+
+@st.cache_data(ttl=600)
+
+def load_data():
+
+    return session.sql("SELECT * FROM ECONOMIC_DASHBOARD_LIVE ORDER BY DATE DESC LIMIT 24"
+
+    ).to_pandas()
+
+
+
+data = load_data()
+
+
+
+# Show a quick snapshot
+
+col1, col2, col3 = st.columns(3)
+
+latest = data.dropna(subset=["UNEMPLOYMENT_RATE_30Y"]).iloc[0] if not data.empty else None
+
+if latest is not None:
+
+    col1.metric("Unemployment", f"{latest['UNEMPLOYMENT_RATE_30Y']*100:.1f}%")
+
+
+
+latest_cpi = data.dropna(subset=["CPI"]).iloc[0] if not data.empty else None
+
+if latest_cpi is not None:
+
+    col2.metric("CPI Index", f"{latest_cpi['CPI']:.1f}")
+
+
+
+latest_mort = data.dropna(subset=["MORTGAGE_RATE_30Y"]).iloc[0] if not data.empty else None
+
+if latest_mort is not None:
+
+    col3.metric("30Y Mortgage", f"{latest_mort['MORTGAGE_RATE_30Y']*100:.2f}%")
+
+
+
+st.divider()
+
+
+
+# Chat interface
+
+if "messages" not in st.session_state:
+
+    st.session_state.messages = []
+
+
+
+for msg in st.session_state.messages:
+
+    with st.chat_message(msg["role"]):
+
+        st.markdown(msg["content"])
+
+
+
+if prompt := st.chat_input("Ask about unemployment, inflation, or mortgage rates..."):
+
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+    with st.chat_message("user"):
+
+        st.markdown(prompt)
+
+
+
+    with st.chat_message("assistant"):
+
+        with st.spinner("Thinking..."):
+
+            llm_prompt = f"""You are a US economic data analyst. Answer using ONLY this data.
+
+Be concise. Cite specific numbers and dates.
+
+
+
+DATA:
+
+{data.to_string(index=False)}
+
+"""
