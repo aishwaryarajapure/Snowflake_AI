@@ -103,4 +103,16 @@ DATA:
 
 {data.to_string(index=False)}
 
-"""
+NOTES:
+- CPI: Consumer Price Index (1982-84=100). Higher = more inflation.
+- UNEMPLOYMENT_RATE: Decimal. 0.041 = 4.1%.
+- MORTGAGE_RATE_30Y: Decimal. 0.0626 = 6.26%.
+
+QUESTION: {prompt}"""
+
+            answer = Complete("mistral-large", llm_prompt)
+            st.markdown(answer)
+            st.session_state.messages.append({"role": "assistant", "content": answer})
+
+with st.expander("📊 View raw data"):
+    st.dataframe(data, use_container_width=True)
